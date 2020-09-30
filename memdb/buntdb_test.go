@@ -1,6 +1,7 @@
 package buntdb
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"github.com/tidwall/gjson"
@@ -29,25 +30,25 @@ func (t *Timer) Stop() float64 {
 }
 
 func TestIndexString(t *testing.T) {
-	db, _ := Open(":memory:")
-	//db.CreateIndex("name", "*", IndexInt)
-	db.Update(func(tx *Tx) error {
-		tx.Set("8", "Tom", nil)
-		tx.Set("2", "Janet", nil)
-		tx.Set("3", "Carol", nil)
-		tx.Set("4", "Alan", nil)
-		tx.Set("5", "Sam", nil)
-		tx.Set("9", "Melinda", nil)
-		return nil
-	})
-
-	db.View(func(tx *Tx) error {
-		tx.AscendRange("name", "5", "8", func(key, value string) bool {
-			fmt.Printf("%s: %s\n", key, value)
-			return true
-		})
-		return nil
-	})
+	//db, _ := Open(":memory:")
+	////db.CreateIndex("name", "*", IndexInt)
+	//db.Update(func(tx *Tx) error {
+	//	tx.Set("8", "Tom", nil)
+	//	tx.Set("2", "Janet", nil)
+	//	tx.Set("3", "Carol", nil)
+	//	tx.Set("4", "Alan", nil)
+	//	tx.Set("5", "Sam", nil)
+	//	tx.Set("9", "Melinda", nil)
+	//	return nil
+	//})
+	//
+	//db.View(func(tx *Tx) error {
+	//	tx.AscendRange("name", "5", "8", func(key, value string) bool {
+	//		fmt.Printf("%s: %s\n", key, value)
+	//		return true
+	//	})
+	//	return nil
+	//})
 
 	//db.View(func(tx *Tx) error {
 	//	tx.Ascend("name", func(key, value string) bool {
@@ -84,33 +85,57 @@ func IndexJSON2(path string) func(a, b string) bool {
 
 var gDB *DB
 
-func testLoadData(t *testing.T) {
+func TestDB_Indexes09(t *testing.T) {
 	//a := ","
 	//b := "AAA1,AAA2,"
 	//index := strings.Index(b,"AAA1,")
 	//fmt.Println(b[index])
 	gDB, _ = Open(":memory:")
-	const NUM = 10 * 10000
-	gDB.CreateIndex("Dim2_Dim3", "*", IndexJSON("Dim2"))
+	const NUM = 10
+
+	//gDB.CreateIndex("Dim2_Dim3", "*", IndexJSON("Dim2"))
 	for i := 1; i <= NUM; i++ {
 		k := uint64(i)
 		item := &Dimension{}
 		item.Dim1 = k
 		item.Dim2 = "AAA" + strconv.Itoa(i)
 
-		item.Dim3 = "BBB" + strconv.Itoa(i)
-		item.Dim4 = "CCC" + strconv.Itoa(i)
-		item.Dim5 = "DDD" + strconv.Itoa(i)
-		item.Value = float64(k)
+		//item.Dim3 = "BBB" + strconv.Itoa(i)
+		//item.Dim4 = "CCC" + strconv.Itoa(i)
+		//item.Dim5 = "DDD" + strconv.Itoa(i)
+		//item.Value = float64(k)
 
 		val, _ := json.Marshal(item)
-		strVal := string(val)
-		strKey := strconv.Itoa(i)
-		gDB.Update(func(tx *Tx) error {
-			tx.Set(strKey, strVal, nil)
-			return nil
-		})
+		//strVal := string(val)
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, k)
+		//strKey := string(buf)
+		gDB.Put(buf, val)
+		//gDB.Update(func(tx *Tx) error {
+		//	tx.Set(buf, val, nil)
+		//	return nil
+		//})
 	}
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, 5)
+	iterator := gDB.NewIterator(buf)
+	iterator.Next()
+	val := gDB.Get(buf)
+	fmt.Println(string(val))
+	fmt.Println(string(iterator.Value()))
+
+	//_ = gDB.View(func(tx *Tx) error {
+	//	buf := make([]byte,8)
+	//	binary.BigEndian.PutUint64(buf,10)
+	//	val,_ := tx.Get(buf)
+	//	fmt.Println(string(val))
+	//
+	//	//iterator.Next()
+	//	//iterator.Next()
+	//	////val :=tx.FindFirstGreaterKey(Key(buf))
+	//	//fmt.Println(string(iterator.Value()))
+	//	return nil
+	//})
 	//gDB.Update(func(tx *Tx) error {
 	//	tx.SetHitHandler("Dim2", func(scope map[interface{}]bool, item string) bool {
 	//		//token :=gjson.Get(item,"Dim2")
@@ -157,84 +182,84 @@ func TestDB_Indexes01(t *testing.T) {
 
 }
 func TestDB_Indexes04(t *testing.T) {
-	testLoadData(t)
-	var err error
-	timer := NewTimer()
-	//var result string
-	const NUM = 1
-	//for i :=1;i <= NUM;i++{
-	val := `{"Dim2":"AAA1","Dim3":"BBB1"}`
-	err = gDB.View(func(tx *Tx) error {
-		err := tx.AscendEqual("Dim2_Dim3", val, func(key, value string) bool {
-
-			fmt.Printf("%s: %s\n", key, value)
-
-			return true
-		})
-		if err != nil {
-			fmt.Println(err)
-		}
-		return nil
-	})
-	if err != nil {
-		fmt.Println(err)
-	}
+	//testLoadData(t)
+	//var err error
+	//timer := NewTimer()
+	////var result string
+	//const NUM = 1
+	////for i :=1;i <= NUM;i++{
+	//val := `{"Dim2":"AAA1","Dim3":"BBB1"}`
+	//err = gDB.View(func(tx *Tx) error {
+	//	err := tx.AscendEqual("Dim2_Dim3", val, func(key, value string) bool {
+	//
+	//		fmt.Printf("%s: %s\n", key, value)
+	//
+	//		return true
+	//	})
+	//	if err != nil {
+	//		fmt.Println(err)
+	//	}
+	//	return nil
+	//})
+	//if err != nil {
+	//	fmt.Println(err)
 	//}
-	fmt.Println(timer.Stop())
+	////}
+	//fmt.Println(timer.Stop())
 
 }
 
 func TestDB_Indexes05(t *testing.T) {
-	testLoadData(t)
-	var err error
-	timer := NewTimer()
-	//var result string
-	var count int
-	const NUM = 1 * 100
-	for i := 1; i <= NUM; i++ {
-		val := fmt.Sprintf(`{"Dim2":"AAA%d"}`, i)
-		err = gDB.View(func(tx *Tx) error {
-			err := tx.AscendEqual("Dim2_Dim3", val, func(key, value string) bool {
-
-				count++
-				//fmt.Printf("%s: %s\n", key, value)
-				return true
-			})
-			if err != nil {
-				fmt.Println(err)
-			}
-			return nil
-		})
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
-	fmt.Println("时间花费:", timer.Stop())
-	fmt.Println("记录数量:", count)
+	//testLoadData(t)
+	//var err error
+	//timer := NewTimer()
+	////var result string
+	//var count int
+	//const NUM = 1 * 100
+	//for i := 1; i <= NUM; i++ {
+	//	val := fmt.Sprintf(`{"Dim2":"AAA%d"}`, i)
+	//	err = gDB.View(func(tx *Tx) error {
+	//		err := tx.AscendEqual("Dim2_Dim3", val, func(key , value string) bool {
+	//
+	//			count++
+	//			//fmt.Printf("%s: %s\n", key, value)
+	//			return true
+	//		})
+	//		if err != nil {
+	//			fmt.Println(err)
+	//		}
+	//		return nil
+	//	})
+	//	if err != nil {
+	//		fmt.Println(err)
+	//	}
+	//}
+	//fmt.Println("时间花费:", timer.Stop())
+	//fmt.Println("记录数量:", count)
 }
 
 func TestDB_Indexes03(t *testing.T) {
-	db, _ := Open(":memory:")
-	db.CreateIndex("last_name", "*", IndexJSON("name.last"))
-	db.CreateIndex("age", "*", IndexJSON("age"))
-	db.Update(func(tx *Tx) error {
-		tx.Set("1", `{"name":{"first":"Tom","last":"Johnson"},"age":38}`, nil)
-		tx.Set("2", `{"name":{"first":"Janet","last":"Johnson"},"age":47}`, nil)
-		tx.Set("3", `{"name":{"first":"Carol","last":"Anderson"},"age":52}`, nil)
-		tx.Set("4", `{"name":{"first":"Alan","last":"Cooper"},"age":28}`, nil)
-		return nil
-	})
-	db.View(func(tx *Tx) error {
-		fmt.Println("Order by last name")
-		tx.AscendEqual("last_name", `{"name":{"first":"Tom","last":"Johnson"},"age":38}`, func(key, value string) bool {
-			fmt.Printf("%s: %s\n", key, value)
-			return true
-		})
-
-		//tx.Ascend("last_name", func(key, value string) bool {
-		//	fmt.Printf("%s: %s\n", key, value)
-		//	return true
-		//})
-		return nil
-	})
+	//db, _ := Open(":memory:")
+	//db.CreateIndex("last_name", "*", IndexJSON("name.last"))
+	//db.CreateIndex("age", "*", IndexJSON("age"))
+	//db.Update(func(tx *Tx) error {
+	//	tx.Set("1", `{"name":{"first":"Tom","last":"Johnson"},"age":38}`, nil)
+	//	tx.Set("2", `{"name":{"first":"Janet","last":"Johnson"},"age":47}`, nil)
+	//	tx.Set("3", `{"name":{"first":"Carol","last":"Anderson"},"age":52}`, nil)
+	//	tx.Set("4", `{"name":{"first":"Alan","last":"Cooper"},"age":28}`, nil)
+	//	return nil
+	//})
+	//db.View(func(tx *Tx) error {
+	//	fmt.Println("Order by last name")
+	//	tx.AscendEqual("last_name", `{"name":{"first":"Tom","last":"Johnson"},"age":38}`, func(key, value string) bool {
+	//		fmt.Printf("%s: %s\n", key, value)
+	//		return true
+	//	})
+	//
+	//	//tx.Ascend("last_name", func(key, value string) bool {
+	//	//	fmt.Printf("%s: %s\n", key, value)
+	//	//	return true
+	//	//})
+	//	return nil
+	//})
 }

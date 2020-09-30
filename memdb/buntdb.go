@@ -922,6 +922,29 @@ func (db *DB) load() error {
 	db.lastaofsz = int(pos)
 	return nil
 }
+func (db *DB) Put(key Key, val Value) (err error) {
+	db.managed(true, func(tx *Tx) error {
+		_, _, err = tx.Set(key, val, nil)
+		return err
+	})
+	return err
+}
+func (db *DB) NewIterator(start Key) (iter *MemdbIterator) {
+	db.managed(true, func(tx *Tx) error {
+		iter = tx.newIterator(start)
+		return nil
+	})
+	return iter
+}
+
+func (db *DB) Get(key Key) (val Value) {
+	val = nil
+	db.managed(false, func(tx *Tx) error {
+		val, _ = tx.Get(key)
+		return nil
+	})
+	return val
+}
 
 // managed calls a block of code that is fully contained in a transaction.
 // This method is intended to be wrapped by Update and View
@@ -1060,16 +1083,16 @@ func (db *DB) Begin(writable bool) (*Tx, error) {
 		tx.unlock()
 		return nil, ErrDatabaseClosed
 	}
-	if writable {
-		// writable transactions have a writeContext object that
-		// contains information about changes to the database.
-		tx.wc = &txWriteContext{}
-		tx.wc.rollbackItems = make(map[string]*dbItem)
-		tx.wc.rollbackIndexes = make(map[string]*index)
-		if db.persist {
-			tx.wc.commitItems = make(map[string]*dbItem)
-		}
-	}
+	//if writable {
+	//	// writable transactions have a writeContext object that
+	//	// contains information about changes to the database.
+	//	tx.wc = &txWriteContext{}
+	//	tx.wc.rollbackItems = make(map[string]*dbItem)
+	//	tx.wc.rollbackIndexes = make(map[string]*index)
+	//	if db.persist {
+	//		tx.wc.commitItems = make(map[string]*dbItem)
+	//	}
+	//}
 	return tx, nil
 }
 
@@ -1133,32 +1156,32 @@ func (tx *Tx) Commit() error {
 		return ErrTxNotWritable
 	}
 	var err error
-	if tx.db.persist && (len(tx.wc.commitItems) > 0 || tx.wc.rbkeys != nil) {
-		tx.db.buf = tx.db.buf[:0]
-		// write a flushdb if a deleteAll was called.
-		if tx.wc.rbkeys != nil {
-			tx.db.buf = append(tx.db.buf, "*1\r\n$7\r\nflushdb\r\n"...)
-		}
-		// Each committed record is written to disk
-		for key, item := range tx.wc.commitItems {
-			if item == nil {
-				tx.db.buf = (&dbItem{key: []byte(key)}).writeDeleteTo(tx.db.buf)
-			} else {
-				tx.db.buf = item.writeSetTo(tx.db.buf)
-			}
-		}
-		// Flushing the buffer only once per transaction.
-		// If this operation fails then the write did failed and we must
-		// rollback.
-		if _, err = tx.db.file.Write(tx.db.buf); err != nil {
-			tx.rollbackInner()
-		}
-		if tx.db.config.SyncPolicy == Always {
-			_ = tx.db.file.Sync()
-		}
-		// Increment the number of flushes. The background syncing uses this.
-		tx.db.flushes++
-	}
+	//if tx.db.persist && (len(tx.wc.commitItems) > 0 || tx.wc.rbkeys != nil) {
+	//	tx.db.buf = tx.db.buf[:0]
+	//	// write a flushdb if a deleteAll was called.
+	//	if tx.wc.rbkeys != nil {
+	//		tx.db.buf = append(tx.db.buf, "*1\r\n$7\r\nflushdb\r\n"...)
+	//	}
+	//	// Each committed record is written to disk
+	//	for key, item := range tx.wc.commitItems {
+	//		if item == nil {
+	//			tx.db.buf = (&dbItem{key: []byte(key)}).writeDeleteTo(tx.db.buf)
+	//		} else {
+	//			tx.db.buf = item.writeSetTo(tx.db.buf)
+	//		}
+	//	}
+	//	// Flushing the buffer only once per transaction.
+	//	// If this operation fails then the write did failed and we must
+	//	// rollback.
+	//	if _, err = tx.db.file.Write(tx.db.buf); err != nil {
+	//		tx.rollbackInner()
+	//	}
+	//	if tx.db.config.SyncPolicy == Always {
+	//		_ = tx.db.file.Sync()
+	//	}
+	//	// Increment the number of flushes. The background syncing uses this.
+	//	tx.db.flushes++
+	//}
 	// Unlock the database and allow for another writable transaction.
 	tx.unlock()
 	// Clear the db field to disable this transaction from future use.
@@ -1219,6 +1242,14 @@ func appendBulkString(buf []byte, s string) []byte {
 	buf = append(buf, '\r', '\n')
 	return buf
 }
+func appendBulkBytes(buf []byte, s []byte) []byte {
+	buf = append(buf, '$')
+	buf = append(buf, strconv.FormatInt(int64(len(s)), 10)...)
+	buf = append(buf, '\r', '\n')
+	buf = append(buf, s...)
+	buf = append(buf, '\r', '\n')
+	return buf
+}
 
 // writeSetTo writes an item as a single SET record to the a bufio Writer.
 func (dbi *dbItem) writeSetTo(buf []byte) []byte {
@@ -1226,15 +1257,15 @@ func (dbi *dbItem) writeSetTo(buf []byte) []byte {
 		ex := dbi.opts.exat.Sub(time.Now()) / time.Second
 		buf = appendArray(buf, 5)
 		buf = appendBulkString(buf, "set")
-		buf = appendBulkString(buf, string(dbi.key))
-		buf = appendBulkString(buf, string(dbi.val))
+		buf = appendBulkBytes(buf, dbi.key)
+		buf = appendBulkBytes(buf, dbi.val)
 		buf = appendBulkString(buf, "ex")
 		buf = appendBulkString(buf, strconv.FormatUint(uint64(ex), 10))
 	} else {
 		buf = appendArray(buf, 3)
 		buf = appendBulkString(buf, "set")
-		buf = appendBulkString(buf, string(dbi.key))
-		buf = appendBulkString(buf, string(dbi.val))
+		buf = appendBulkBytes(buf, dbi.key)
+		buf = appendBulkBytes(buf, dbi.val)
 	}
 	return buf
 }
@@ -1243,7 +1274,7 @@ func (dbi *dbItem) writeSetTo(buf []byte) []byte {
 func (dbi *dbItem) writeDeleteTo(buf []byte) []byte {
 	buf = appendArray(buf, 2)
 	buf = appendBulkString(buf, "del")
-	buf = appendBulkString(buf, string(dbi.key))
+	buf = appendBulkBytes(buf, dbi.key)
 	return buf
 }
 
@@ -1381,9 +1412,8 @@ func (tx *Tx) Set(key Key, value Value, opts *SetOptions) (previousValue Value,
 		return nil, false, ErrTxClosed
 	} else if !tx.writable {
 		return nil, false, ErrTxNotWritable
-	} else if tx.wc.itercount > 0 {
-		return nil, false, ErrTxIterating
 	}
+
 	var item *dbItem
 	item = &dbItem{key: key, val: value}
 	if opts != nil {
@@ -1396,32 +1426,36 @@ func (tx *Tx) Set(key Key, value Value, opts *SetOptions) (previousValue Value,
 	// Insert the item into the keys tree.
 	prev := tx.db.insertIntoDatabase(item)
 
-	// insert into the rollback map if there has not been a deleteAll.
-	if tx.wc.rbkeys == nil {
-		if prev == nil {
-			// An item with the same key did not previously exist. Let's
-			// create a rollback entry with a nil value. A nil value indicates
-			// that the entry should be deleted on rollback. When the value is
-			// *not* nil, that means the entry should be reverted.
-			tx.wc.rollbackItems[string(key)] = nil
-		} else {
-			// A previous item already exists in the database. Let's create a
-			// rollback entry with the item as the value. We need to check the
-			// map to see if there isn't already an item that matches the
-			// same key.
-			if _, ok := tx.wc.rollbackItems[string(key)]; !ok {
-				tx.wc.rollbackItems[string(key)] = prev
-			}
-			if !prev.expired() {
-				previousValue, replaced = prev.val, true
-			}
-		}
+	if prev != nil && !prev.expired() {
+		previousValue, replaced = prev.val, true
 	}
+
+	// insert into the rollback map if there has not been a deleteAll.
+	//if tx.wc.rbkeys == nil {
+	//	if prev == nil {
+	//		// An item with the same key did not previously exist. Let's
+	//		// create a rollback entry with a nil value. A nil value indicates
+	//		// that the entry should be deleted on rollback. When the value is
+	//		// *not* nil, that means the entry should be reverted.
+	//		tx.wc.rollbackItems[string(key)] = nil
+	//	} else {
+	//		// A previous item already exists in the database. Let's create a
+	//		// rollback entry with the item as the value. We need to check the
+	//		// map to see if there isn't already an item that matches the
+	//		// same key.
+	//		if _, ok := tx.wc.rollbackItems[string(key)]; !ok {
+	//			tx.wc.rollbackItems[string(key)] = prev
+	//		}
+	//		if !prev.expired() {
+	//			previousValue, replaced = prev.val, true
+	//		}
+	//	}
+	//}
 	// For commits we simply assign the item to the map. We use this map to
 	// write the entry to disk.
-	if tx.db.persist {
-		tx.wc.commitItems[string(key)] = item
-	}
+	//if tx.db.persist {
+	//	tx.wc.commitItems[string(key)] = item
+	//}
 	return previousValue, replaced, nil
 }
 
@@ -1614,7 +1648,7 @@ func (tx *Tx) FindFirstGreaterKey(start Key) string {
 	return result
 }
 
-func (tx *Tx) NewIterator(start Key) *MemdbIterator {
+func (tx *Tx) newIterator(start Key) *MemdbIterator {
 	result := &MemdbIterator{}
 
 	tx.scanKeys(start, func(dbi *dbItem) bool {
