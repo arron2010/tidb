@@ -336,7 +336,8 @@ func (mvcc *MVCCLevelDB) BatchGet(ks [][]byte, startTS uint64, isoLevel kvrpcpb.
 }
 
 // Scan implements the MVCCStore interface.
-func (mvcc *MVCCLevelDB) Scan(startKey, endKey []byte, limit int, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLock []uint64) []Pair {
+func (mvcc *MVCCLevelDB) Scan(startKey, endKey []byte, limit int,
+	startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLock []uint64) []Pair {
 	mvcc.mu.RLock()
 	defer mvcc.mu.RUnlock()
 
@@ -769,6 +770,7 @@ func prewriteMutation(db *leveldb.DB, batch *leveldb.Batch,
 	mutation *kvrpcpb.Mutation, startTS uint64,
 	primary []byte, ttl uint64, txnSize uint64,
 	isPessimisticLock bool, minCommitTS uint64) error {
+
 	startKey := mvccEncode(mutation.Key, lockVer)
 	iter := newIterator(db, &util.Range{
 		Start: startKey,
