@@ -5,6 +5,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/parser/terror"
+	xhelper "github.com/pingcap/tidb/helper"
 	"github.com/pingcap/tidb/store/tikv/oracle"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/xp/shorttext-db/memkv"
@@ -21,7 +22,7 @@ type MVCCMemDB struct {
 func NewMemDB(path string) (*MVCCMemDB, error) {
 	mvccDB := &MVCCMemDB{}
 	var err error
-	mvccDB.db, err = memkv.NewDBProxy(1, 0)
+	mvccDB.db, err = memkv.NewDBProxy()
 	return mvccDB, err
 }
 func (mvcc *MVCCMemDB) Get(key []byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) ([]byte, error) {
@@ -34,9 +35,11 @@ func (mvcc *MVCCMemDB) Get(key []byte, startTS uint64, isoLevel kvrpcpb.Isolatio
 func (mvcc *MVCCMemDB) getValue(key []byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) ([]byte, error) {
 	//startKey := mvccEncode(key, lockVer)
 	//iter :=  mvcc.db.Get(startKey)
-
+	//printKey("getValueEx---------->",key)
 	iter := mvcc.db.NewIterator(key)
-
+	//if !iter.Valid(){
+	//	return nil,nil
+	//}
 	return getValueEx(iter, key, startTS, isoLevel, resolvedLocks)
 }
 
@@ -234,6 +237,7 @@ func (mvcc MVCCMemDB) Commit(keys [][]byte, startTS, commitTS uint64) error {
 
 	batch := memkv.NewBatch()
 	for _, k := range keys {
+		xhelper.PrintKey("Commit----------->", k)
 		err := commitKeyEx(mvcc.db, batch, k, startTS, commitTS)
 		if err != nil {
 			return errors.Trace(err)
@@ -571,6 +575,7 @@ func prewriteMutationEx(db memkv.KVClient, batch *memkv.Batch,
 	primary []byte, ttl uint64, txnSize uint64,
 	isPessimisticLock bool, minCommitTS uint64) error {
 	//startKey := mvccEncode(mutation.Key, lockVer)
+	xhelper.PrintKey("prewriteMutation---->", mutation.Key)
 	iter := db.NewIterator(mutation.Key)
 
 	dec := lockDecoderEx{
