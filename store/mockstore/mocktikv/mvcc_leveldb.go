@@ -15,6 +15,8 @@ package mocktikv
 
 import (
 	"bytes"
+	xhelper "github.com/pingcap/tidb/helper"
+	"github.com/pingcap/tidb/store/tikv"
 	"math"
 	"sync"
 
@@ -128,6 +130,8 @@ func NewMVCCLevelDB(path string) (*MVCCLevelDB, error) {
 	return &MVCCLevelDB{db: d, deadlockDetector: deadlock.NewDetector()}, errors.Trace(err)
 }
 
+var sequence uint64
+
 // Iterator wraps iterator.Iterator to provide Valid() method.
 type Iterator struct {
 	iterator.Iterator
@@ -146,6 +150,7 @@ func (iter *Iterator) Valid() bool {
 
 func newIterator(db *leveldb.DB, slice *util.Range) *Iterator {
 	iter := &Iterator{db.NewIterator(slice, nil), true}
+
 	iter.Next()
 	return iter
 }
@@ -267,11 +272,14 @@ func (dec *skipDecoder) Decode(iter *Iterator) (bool, error) {
 func (mvcc *MVCCLevelDB) Get(key []byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) ([]byte, error) {
 	mvcc.mu.RLock()
 	defer mvcc.mu.RUnlock()
+	val, err := mvcc.getValue(key, startTS, isoLevel, resolvedLocks)
+	xhelper.Print("MVCCLevelDB-->Get", "-->", string(key), "-->", startTS, "-->", 0, "-->", key, "-->275-->", err)
 
-	return mvcc.getValue(key, startTS, isoLevel, resolvedLocks)
+	return val, err
 }
 
 func (mvcc *MVCCLevelDB) getValue(key []byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) ([]byte, error) {
+	//printKey("getValue---------->",key)
 	startKey := mvccEncode(key, lockVer)
 	iter := newIterator(mvcc.db, &util.Range{
 		Start: startKey,
@@ -307,11 +315,16 @@ func getValue(iter *Iterator, key []byte, startTS uint64, isoLevel kvrpcpb.Isola
 		// Read the first committed value that can be seen at startTS.
 		if value.commitTS <= startTS {
 			if value.valueType == typeDelete {
+				xhelper.Print("MVCCLevelDB-->getValue", "-->", string(key), "-->", startTS, "-->", len(value.value), "-->", key, "--> typeDelete 317")
+
 				return nil, nil
 			}
+			xhelper.Print("MVCCLevelDB-->getValue", "-->", string(key), "-->", startTS, "-->", len(value.value), "-->", key, "-->321")
 			return value.value, nil
 		}
 	}
+	xhelper.Print("MVCCLevelDB-->getValue", "-->", string(key), "-->", startTS, "-->", 0, "-->", key, "-->320")
+
 	return nil, nil
 }
 
@@ -338,9 +351,13 @@ func (mvcc *MVCCLevelDB) BatchGet(ks [][]byte, startTS uint64, isoLevel kvrpcpb.
 // Scan implements the MVCCStore interface.
 func (mvcc *MVCCLevelDB) Scan(startKey, endKey []byte, limit int,
 	startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLock []uint64) []Pair {
+	if len(startKey) != len(endKey) {
+		panic("MVCCLevelDB----------------------------------->error")
+	}
 	mvcc.mu.RLock()
 	defer mvcc.mu.RUnlock()
-
+	xhelper.PrintKey("MVCCLevelDB_Scan-->startKey-->", startKey)
+	xhelper.PrintKey("MVCCLevelDB_Scan-->endKey-->", endKey)
 	iter, currKey, err := newScanIterator(mvcc.db, startKey, endKey)
 	defer iter.Release()
 	if err != nil {
@@ -674,6 +691,9 @@ func (mvcc *MVCCLevelDB) Prewrite(req *kvrpcpb.PrewriteRequest) []error {
 		}
 		isPessimisticLock := len(req.IsPessimisticLock) > 0 && req.IsPessimisticLock[i]
 		err = prewriteMutation(mvcc.db, batch, m, startTS, primary, ttl, txnSize, isPessimisticLock, minCommitTS)
+		if err != nil {
+			xhelper.Print("Prewrite 683-->", m.Key, "-->", startTS, "-->", tikv.GetGID(), "-->", err.Error())
+		}
 		errs = append(errs, err)
 		if err != nil {
 			anyError = true
@@ -770,7 +790,10 @@ func prewriteMutation(db *leveldb.DB, batch *leveldb.Batch,
 	mutation *kvrpcpb.Mutation, startTS uint64,
 	primary []byte, ttl uint64, txnSize uint64,
 	isPessimisticLock bool, minCommitTS uint64) error {
-
+	xhelper.Print("prewriteMutation 559-->", string(mutation.Key), "-->", mutation.Key, "-->", mutation.Op.String())
+	//if mutation.Op == kvrpcpb.Op_Del{
+	//	xhelper.Print("MVCCLevelDB-->prewriteMutation-->",mutation.Op)
+	//}
 	startKey := mvccEncode(mutation.Key, lockVer)
 	iter := newIterator(db, &util.Range{
 		Start: startKey,
@@ -792,6 +815,7 @@ func prewriteMutation(db *leveldb.DB, batch *leveldb.Batch,
 				// telling TiDB to rollback the transaction **unconditionly**.
 				dec.lock.ttl = 0
 			}
+
 			return dec.lock.lockErr(mutation.Key)
 		}
 		if dec.lock.op != kvrpcpb.Op_PessimisticLock {
@@ -853,6 +877,7 @@ func (mvcc *MVCCLevelDB) Commit(keys [][]byte, startTS, commitTS uint64) error {
 
 	batch := &leveldb.Batch{}
 	for _, k := range keys {
+		xhelper.Print("MVCCLevelDB->Commit---->", "-->", string(k), "-->", commitTS)
 		err := commitKey(mvcc.db, batch, k, startTS, commitTS)
 		if err != nil {
 			return errors.Trace(err)
@@ -1127,7 +1152,7 @@ func (mvcc *MVCCLevelDB) CheckTxnStatus(primaryKey []byte, lockTS, callerStartTS
 	rollbackIfNotExist bool) (ttl uint64, commitTS uint64, action kvrpcpb.Action, err error) {
 	mvcc.mu.Lock()
 	defer mvcc.mu.Unlock()
-
+	xhelper.PrintKey2("CheckTxnStatus-------->", primaryKey)
 	action = kvrpcpb.Action_NoAction
 
 	startKey := mvccEncode(primaryKey, lockVer)

@@ -6,7 +6,9 @@ import (
 	"github.com/pingcap/tidb/tablecodec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 //var store2 *MVCCMemDB
@@ -56,21 +58,110 @@ func mustRangeScanOK(start, end string, limit int, ts uint64) []Pair {
 	pairs := store.Scan([]byte(start), []byte(end), limit, ts, kvrpcpb.IsolationLevel_SI, nil)
 	return pairs
 }
+
+func mustRangeScanDescOK(start, end string, limit int, ts uint64) []Pair {
+	pairs := store.ReverseScan([]byte(start), []byte(end), limit, ts, kvrpcpb.IsolationLevel_SI, nil)
+	return pairs
+}
+
+func mustRollbackOK(key string, startTS uint64) {
+	keys := make([][]byte, 0, 2)
+	keys = append(keys, []byte(key))
+	store.Rollback(keys, startTS)
+}
+
+func TestMVCCMemDB_Rollback(t *testing.T) {
+	var err error
+	store, err = NewMemDB("")
+	if err != nil {
+		panic(err)
+	}
+	key := "A"
+	val := "A10"
+	mustPrewriteWithTTLOK(putMutations(key, val), key, 10, 0)
+	mustRollbackOK(key, 10)
+	err = store.Commit([][]byte{[]byte(key)}, 5, 10)
+	fmt.Println(err)
+}
 func TestMVCCMemDB_Scan(t *testing.T) {
 	var err error
 	store, err = NewMemDB("")
 	if err != nil {
 		panic(err)
 	}
-	mustPutOK("A", "A10", 5, 10)
-	mustPutOK("C", "C10", 5, 10)
-	mustPutOK("E", "E10", 5, 10)
-	mustPutOK("B", "B20", 15, 20)
-	mustPutOK("D", "D20", 15, 20)
-	pairs := mustRangeScanOK("B", "D\x00", 5, 20)
+	err = mustPutOK("A", "8", 5, 10)
+	if err != nil {
+		fmt.Println(err)
+	}
+	mustPutOK("C", "7", 5, 10)
+	mustPutOK("E", "6", 5, 10)
+	mustPutOK("B", "5", 15, 20)
+	mustPutOK("D", "4", 15, 20)
+	pairs := mustRangeScanDescOK("A", "D\x00", 5, 20)
 	for _, item := range pairs {
 		fmt.Println(string(item.Key))
 	}
+}
+func mustPutOK2(key, value string, startTS, commitTS uint64) error {
+	req := &kvrpcpb.PrewriteRequest{
+		Mutations:    putMutations(key, value),
+		PrimaryLock:  []byte(key),
+		StartVersion: startTS,
+	}
+	errs := store.Prewrite(req)
+	time.Sleep(1 * time.Second)
+	if len(errs) > 0 && errs[0] != nil {
+		return errs[0]
+	}
+	err := store.Commit([][]byte{[]byte(key)}, startTS, commitTS)
+	return err
+}
+func mustPutOK3(key, value string, startTS, commitTS uint64) error {
+	req := &kvrpcpb.PrewriteRequest{
+		Mutations:    putMutations(key, value),
+		PrimaryLock:  []byte(key),
+		StartVersion: startTS,
+	}
+	errs := store.Prewrite(req)
+	if len(errs) > 0 {
+		return errs[0]
+	}
+	return nil
+}
+
+func TestMVCCMemDB_Prewrite(t *testing.T) {
+	//var err error
+	//store, _ = NewMemDB("")
+	store, _ = NewMVCCLevelDB("")
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		mustPutOK2("A", "8", 5, 10)
+		wg.Done()
+	}()
+
+	go func() {
+		mustPutOK3("A", "8", 6, 11)
+		wg.Done()
+	}()
+	wg.Wait()
+
+}
+
+func TestMVCCMemDB_Get(t *testing.T) {
+	var err error
+	store, err = NewMemDB("")
+
+	err = mustPutOK("A", "A10", 5, 10)
+	if err != nil {
+		fmt.Println(err)
+	}
+	k := []byte("A")
+	result, err := store.Get(k, 18, kvrpcpb.IsolationLevel_SI, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(result))
 }
 
 ///
