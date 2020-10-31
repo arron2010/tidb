@@ -116,6 +116,9 @@ func (m *Meta) GenGlobalID() (int64, error) {
 
 	return m.txn.Inc(mNextGlobalIDKey, 1)
 }
+func (m *Meta) GetJobListKey() string {
+	return string(m.jobListKey)
+}
 
 // GenGlobalIDs generates the next n global IDs.
 func (m *Meta) GenGlobalIDs(n int) ([]int64, error) {

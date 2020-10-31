@@ -273,6 +273,9 @@ func runStmt(ctx context.Context, sctx sessionctx.Context, s sqlexec.Statement) 
 	if err != nil {
 		return nil, err
 	}
+	//sql := sctx.GetSessionVars().StmtCtx.OriginalSQL
+	//fmt.Println("###xp->",sql)
+	//xhelper.Print("runStmt-->",sql)
 	rs, err = s.Exec(ctx)
 	sessVars.TxnCtx.StatementCount++
 	if !s.IsReadOnly(sessVars) {

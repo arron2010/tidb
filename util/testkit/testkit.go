@@ -187,6 +187,9 @@ func (tk *TestKit) CheckLastMessage(msg string) {
 // MustExec executes a sql statement and asserts nil error.
 func (tk *TestKit) MustExec(sql string, args ...interface{}) {
 	res, err := tk.Exec(sql, args...)
+	if err != nil {
+		fmt.Print("TestKit-->MustExec", err)
+	}
 	tk.c.Assert(err, check.IsNil, check.Commentf("sql:%s, %v, error stack %v", sql, args, errors.ErrorStack(err)))
 	if res != nil {
 		tk.c.Assert(res.Close(), check.IsNil)

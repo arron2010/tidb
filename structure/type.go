@@ -15,7 +15,6 @@ package structure
 
 import (
 	"bytes"
-
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/util/codec"
@@ -42,6 +41,7 @@ const (
 func (t *TxStructure) encodeStringDataKey(key []byte) kv.Key {
 	// for codec Encode, we may add extra bytes data, so here and following encode
 	// we will use extra length like 4 for a little optimization.
+	//fmt.Printf("###xp-> TxStructure encodeStringDataKey key:%s  prefix:%s\n",string(key),string(t.prefix))
 	ek := make([]byte, 0, len(t.prefix)+len(key)+24)
 	ek = append(ek, t.prefix...)
 	ek = codec.EncodeBytes(ek, key)
@@ -113,9 +113,35 @@ func (t *TxStructure) encodeListMetaKey(key []byte) kv.Key {
 }
 
 func (t *TxStructure) encodeListDataKey(key []byte, index int64) kv.Key {
+	//if string(key) =="DDLJobList"{
+	//	fmt.Println()
+	//}
 	ek := make([]byte, 0, len(t.prefix)+len(key)+36)
 	ek = append(ek, t.prefix...)
 	ek = codec.EncodeBytes(ek, key)
+
+	//fmt.Println(ek2," | ",ek3)
 	ek = codec.EncodeUint(ek, uint64(ListData))
 	return codec.EncodeInt(ek, index)
+}
+
+func DecodeListDataKey(key kv.Key) (prefix string, content string, index int64, dt uint64) {
+	prefix = string(key[0])
+	content = ""
+	index = -1
+	dt = 0
+	l := len(key)
+	buf := key
+	l = len(buf)
+	if l < 16 {
+		return prefix, content, index, dt
+	}
+	_, index, _ = codec.DecodeInt(buf[l-8 : l])
+	_, dt, _ = codec.DecodeUint(buf[l-16 : l-8])
+	_, b, _ := codec.DecodeBytes(buf[0:l-16], nil)
+	if len(b) < 2 {
+		return prefix, content, index, dt
+	}
+	content = string(b[1:])
+	return prefix, content, index, dt
 }

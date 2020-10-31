@@ -17,8 +17,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	xhelper "github.com/pingcap/tidb/helper"
 	"math"
+	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -198,6 +201,7 @@ func (c *committerMutations) subRange(from, to int) committerMutations {
 }
 
 func (c *committerMutations) push(op pb.Op, key []byte, value []byte, isPessimisticLock bool) {
+	xhelper.PrintKey("committerMutations_push", key)
 	c.ops = append(c.ops, op)
 	c.keys = append(c.keys, key)
 	c.values = append(c.values, value)
@@ -726,6 +730,9 @@ func (actionPrewrite) handleSingleBatch(c *twoPhaseCommitter, bo *Backoffer, bat
 		}
 		prewriteResp := resp.Resp.(*pb.PrewriteResponse)
 		keyErrs := prewriteResp.GetErrors()
+		//if len(keyErrs) > 0{
+		//	xhelper.Print("handleSingleBatch 732----------------------->",req.Type.String())
+		//}
 		if len(keyErrs) == 0 {
 			if bytes.Equal(c.primary(), batch.mutations.keys[0]) {
 				// After writing the primary key, if the size of the transaction is large than 32M,
@@ -1228,6 +1235,17 @@ func (c *twoPhaseCommitter) pessimisticRollbackMutations(bo *Backoffer, mutation
 	return c.doActionOnMutations(bo, actionPessimisticRollback{}, mutations)
 }
 
+const lockVer uint64 = math.MaxUint64
+
+func GetGID() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	b = bytes.TrimPrefix(b, []byte("goroutine "))
+	b = b[:bytes.IndexByte(b, ' ')]
+	n, _ := strconv.ParseUint(string(b), 10, 64)
+	return n
+}
+
 // execute executes the two-phase commit protocol.
 func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 	var binlogSkipped bool
@@ -1269,6 +1287,20 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 	binlogChan := c.prewriteBinlog(ctx)
 	prewriteBo := NewBackofferWithVars(ctx, PrewriteMaxBackoff, c.txn.vars)
 	start := time.Now()
+	//	for _,key := range c.mutations.keys{
+	//		if key[len(key)-1] ==76 {
+	//			//v, ok := kv.MyDB.Get(key, lockVer)
+	//			//if ok {
+	//			//	xhelper.Print("twoPhaseCommitter 1280-->prewriteMutations-->", key, "-->", len(v),"-->",c.startTS,"-->",GetGID())
+	//			//} else {
+	//			//	xhelper.Print("twoPhaseCommitter 1284-->prewriteMutations-->", key, "-->", len(v),"--->",c.startTS,"-->",GetGID())
+	//			//}
+	//			//xhelper.Print("twoPhaseCommitter 1284-->prewriteMutations-->", key, "-->",c.startTS,"-->",GetGID())
+	//
+	////			debug.PrintStack()
+	//		}
+	//	}
+
 	err = c.prewriteMutations(prewriteBo, c.mutations)
 	commitDetail := c.getDetail()
 	commitDetail.PrewriteTime = time.Since(start)
@@ -1286,11 +1318,14 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 			binlogSkipped = binlogWriteResult.Skipped()
 			binlogErr := binlogWriteResult.GetError()
 			if binlogErr != nil {
+				xhelper.Print("twoPhaseCommitter 1322-->prewriteMutations-->", binlogErr)
 				return binlogErr
 			}
 		}
 	}
 	if err != nil {
+		xhelper.Print("twoPhaseCommitter 1327-->prewriteMutations-->", err)
+
 		logutil.Logger(ctx).Debug("2PC failed on prewrite",
 			zap.Error(err),
 			zap.Uint64("txnStartTS", c.startTS))
@@ -1307,6 +1342,8 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 		logutil.Logger(ctx).Warn("2PC get commitTS failed",
 			zap.Error(err),
 			zap.Uint64("txnStartTS", c.startTS))
+
+		xhelper.Print("twoPhaseCommitter 1345-->prewriteMutations-->", err)
 		return errors.Trace(err)
 	}
 	commitDetail.GetCommitTsTime = time.Since(start)
@@ -1318,16 +1355,25 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 		err = errors.Errorf("conn %d Invalid transaction tso with txnStartTS=%v while txnCommitTS=%v",
 			c.connID, c.startTS, commitTS)
 		logutil.BgLogger().Error("invalid transaction", zap.Error(err))
+
+		xhelper.Print("twoPhaseCommitter 1357-->prewriteMutations-->", err)
+
 		return errors.Trace(err)
 	}
 	c.commitTS = commitTS
 	if err = c.checkSchemaValid(); err != nil {
+
+		xhelper.Print("twoPhaseCommitter 1363-->prewriteMutations-->", err)
+
 		return errors.Trace(err)
 	}
 
 	if c.store.oracle.IsExpired(c.startTS, kv.MaxTxnTimeUse) {
 		err = errors.Errorf("conn %d txn takes too much time, txnStartTS: %d, comm: %d",
 			c.connID, c.startTS, c.commitTS)
+
+		xhelper.Print("twoPhaseCommitter 1371-->prewriteMutations-->", err)
+
 		return err
 	}
 
@@ -1338,6 +1384,18 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 	start = time.Now()
 	commitBo := NewBackofferWithVars(ctx, CommitMaxBackoff, c.txn.vars)
 	err = c.commitMutations(commitBo, c.mutations)
+	for _, key := range c.mutations.keys {
+		if key[len(key)-1] == 76 {
+			//v, ok := kv.MyDB.Get(key, lockVer)
+			//if ok {
+			//	xhelper.Print("twoPhaseCommitter 1378-->commitMutations-->", key, "-->", len(v),"-->",c.startTS,"-->",GetGID())
+			//} else {
+			//	xhelper.Print("twoPhaseCommitter 1380-->commitMutations-->", key, "-->", len(v),"--->",c.startTS,"-->",GetGID())
+			//}
+			//	xhelper.Print("twoPhaseCommitter 1382-->commitMutations-->", key, "-->",c.startTS,"-->",GetGID())
+
+		}
+	}
 	commitDetail.CommitTime = time.Since(start)
 	if commitBo.totalSleep > 0 {
 		atomic.AddInt64(&commitDetail.CommitBackoffTime, int64(commitBo.totalSleep)*int64(time.Millisecond))

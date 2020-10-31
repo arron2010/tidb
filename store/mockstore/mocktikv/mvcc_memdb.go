@@ -27,8 +27,8 @@ func (mvcc *MVCCMemDB) GetKVClient() memkv.KVClient {
 	return mvcc.db
 }
 func (mvcc *MVCCMemDB) Get(key []byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) ([]byte, error) {
-	mvcc.mu.RLock()
-	defer mvcc.mu.RUnlock()
+	//mvcc.mu.RLock()
+	//defer mvcc.mu.RUnlock()
 
 	val, _ := mvcc.getValue(key, startTS, isoLevel, resolvedLocks)
 	//xhelper.PrintKey3("MVCCMemDB-->Get",key,val)
@@ -118,8 +118,8 @@ func (mvcc *MVCCMemDB) getValue(key []byte, startTS uint64, isoLevel kvrpcpb.Iso
 //}
 
 func (mvcc *MVCCMemDB) Scan(startKey, endKey []byte, limit int, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLock []uint64) []Pair {
-	mvcc.mu.RLock()
-	defer mvcc.mu.RUnlock()
+	//mvcc.mu.RLock()
+	//defer mvcc.mu.RUnlock()
 	result := mvcc.db.Scan(startKey, endKey, startTS, limit, false, nil)
 	pairs := make([]Pair, 0, len(result))
 	for _, item := range result {
@@ -138,8 +138,8 @@ func (mvcc *MVCCMemDB) Scan(startKey, endKey []byte, limit int, startTS uint64, 
 //}
 
 func (mvcc *MVCCMemDB) ReverseScan(startKey, endKey []byte, limit int, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) []Pair {
-	mvcc.mu.RLock()
-	defer mvcc.mu.RUnlock()
+	//mvcc.mu.RLock()
+	//defer mvcc.mu.RUnlock()
 	result := mvcc.db.Scan(startKey, endKey, startTS, limit, true, nil)
 	pairs := make([]Pair, 0, len(result))
 	for _, item := range result {
@@ -149,8 +149,8 @@ func (mvcc *MVCCMemDB) ReverseScan(startKey, endKey []byte, limit int, startTS u
 }
 
 func (mvcc *MVCCMemDB) BatchGet(ks [][]byte, startTS uint64, isoLevel kvrpcpb.IsolationLevel, resolvedLocks []uint64) []Pair {
-	mvcc.mu.RLock()
-	defer mvcc.mu.RUnlock()
+	//mvcc.mu.RLock()
+	//defer mvcc.mu.RUnlock()
 	pairs := make([]Pair, 0, len(ks))
 	for _, k := range ks {
 		val, _ := mvcc.getValue(k, startTS, isoLevel, resolvedLocks)
@@ -177,8 +177,8 @@ func (mvcc *MVCCMemDB) Prewrite(req *kvrpcpb.PrewriteRequest) []error {
 
 	ttl := req.LockTtl
 	minCommitTS := req.MinCommitTs
-	mvcc.mu.Lock()
-	defer mvcc.mu.Unlock()
+	//mvcc.mu.Lock()
+	//defer mvcc.mu.Unlock()
 
 	anyError := false
 	//batch := memkv.NewBatch()
@@ -215,10 +215,10 @@ func (mvcc *MVCCMemDB) Prewrite(req *kvrpcpb.PrewriteRequest) []error {
 }
 
 func (mvcc MVCCMemDB) Commit(keys [][]byte, startTS, commitTS uint64) error {
-	mvcc.mu.Lock()
-	defer func() {
-		mvcc.mu.Unlock()
-	}()
+	//mvcc.mu.Lock()
+	//defer func() {
+	//	mvcc.mu.Unlock()
+	//}()
 
 	//batch := memkv.NewBatch()
 	for _, k := range keys {
@@ -234,10 +234,10 @@ func (mvcc MVCCMemDB) Commit(keys [][]byte, startTS, commitTS uint64) error {
 }
 
 func (mvcc *MVCCMemDB) Rollback(keys [][]byte, startTS uint64) error {
-	mvcc.mu.Lock()
-	defer func() {
-		mvcc.mu.Unlock()
-	}()
+	//mvcc.mu.Lock()
+	//defer func() {
+	//	mvcc.mu.Unlock()
+	//}()
 
 	for _, k := range keys {
 		err := rollbackKeyEx(mvcc.db, k, startTS)

@@ -1086,6 +1086,11 @@ func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec
 
 func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
 	s.PrepareTxnCtx(ctx)
+	//xiaopeng
+	//sql2 := strings.ToLower(sql)
+	//if strings.Index(sql2,"global_variables") > -1{
+	//	fmt.Println()
+	//}
 	err = s.loadCommonGlobalVariablesIfNeeded()
 	if err != nil {
 		return nil, err
@@ -1985,6 +1990,7 @@ func initLoadCommonGlobalVarsSQL() {
 
 // loadCommonGlobalVariablesIfNeeded loads and applies commonly used global variables for the session.
 func (s *session) loadCommonGlobalVariablesIfNeeded() error {
+
 	initLoadCommonGlobalVarsSQL()
 	vars := s.sessionVars
 	if vars.CommonGlobalLoaded {

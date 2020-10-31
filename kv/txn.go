@@ -15,6 +15,7 @@ package kv
 
 import (
 	"context"
+	"github.com/xp/shorttext-db/memkv"
 	"math"
 	"math/rand"
 	"sync/atomic"
@@ -24,6 +25,8 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
+
+var MyDB *memkv.DBProxy
 
 // RunInNewTxn will run the f in a new transaction environment.
 func RunInNewTxn(store Storage, retryable bool, f func(txn Transaction) error) error {
@@ -59,6 +62,10 @@ func RunInNewTxn(store Storage, retryable bool, f func(txn Transaction) error) e
 		}
 
 		err = txn.Commit(context.Background())
+
+		//if MyDB.Locks[originalTxnTS] >0{
+		//	xhelper.Print("RunInNewTxn 67----------->originalTxnTS--------->",originalTxnTS)
+		//}
 		if err == nil {
 			break
 		}

@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	xhelper "github.com/pingcap/tidb/helper"
 	"math"
 	"sync"
 	"time"
@@ -325,10 +326,15 @@ func (lr *LockResolver) resolveLocks(bo *Backoffer, callerStartTS uint64, locks 
 
 	for _, l := range locks {
 		status, err := lr.getTxnStatusFromLock(bo, l, callerStartTS)
+
 		if err != nil {
 			msBeforeTxnExpired.update(0)
 			err = errors.Trace(err)
 			return msBeforeTxnExpired.value(), nil, err
+		}
+
+		if status.commitTS == 0 {
+			xhelper.Print("resolveLocks->getTxnStatusFromLock 337->", l.Key)
 		}
 
 		if status.ttl == 0 {

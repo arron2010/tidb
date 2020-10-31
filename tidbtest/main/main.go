@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"github.com/pingcap/check"
@@ -10,11 +11,10 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/session"
+	"github.com/pingcap/tidb/store/mockstore"
 	"github.com/pingcap/tidb/store/mockstore/mocktikv"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/logutil"
-
-	"github.com/pingcap/tidb/store/mockstore"
 	"github.com/pingcap/tidb/util/testkit"
 	"github.com/pingcap/tidb/util/testleak"
 	"os"
@@ -71,7 +71,8 @@ func SetUpSuite(c *check.C) *testDBSuite {
 	s.autoIDStep = autoid.GetStep()
 	autoid.SetStep(5000)
 
-	s.store, err = mockstore.NewMockTikvStore(mockstore.WithPath("/opt/tidbtest/testdb02"))
+	//	s.store, err = mockstore.NewMockTikvStore(mockstore.WithPath("/opt/tidbtest/testdb02"))
+	s.store, err = mockstore.NewMockTikvStore(mockstore.WithPath(""))
 
 	s.dom, err = session.BootstrapSession(s.store)
 	s.s, err = session.CreateSession(s.store)
@@ -99,35 +100,56 @@ func SetUpSuite2(c *check.C) *testDBSuite {
 
 	testleak.BeforeTest()
 	s := &testDBSuite{}
-	s.lease = 200 * time.Millisecond
+	s.lease = 0
 	session.SetSchemaLease(s.lease)
 	session.SetStatsLease(0)
 
 	s.autoIDStep = autoid.GetStep()
-	autoid.SetStep(5000)
+	autoid.SetStep(1)
 
-	cluster := mocktikv.NewCluster()
-	mocktikv.BootstrapWithMultiRegions(cluster, []byte("a"), []byte("e"), []byte("k"))
-	mvccStore := mocktikv.MustNewMVCCStore()
+	//mvccStore, err := mocktikv.NewMVCCLevelDB("")
+
+	mvccStore, _ := mocktikv.NewMemDB("")
 
 	s.store, err = mockstore.NewMockTikvStore(
-		mockstore.WithCluster(cluster),
+		//mockstore.WithCluster(cluster),
 		mockstore.WithMVCCStore(mvccStore),
 	)
 
 	s.dom, err = session.BootstrapSession(s.store)
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(1 * time.Second)
 	s.s, err = session.CreateSession(s.store)
 
-	s.schemaName = "test_db"
-	_, err = s.s.Execute(context.Background(), "create database test_db")
+	//s.schemaName = "test_db"
+	//_, err = s.s.Execute(context.Background(), "create database test_db")
 
 	s.tk = testkit.NewTestKit(c, s.store)
 	if err != nil {
 		fmt.Println(err)
 	}
+
 	return s
 }
+func SetUpSuite3() {
 
+	mvccStore, err := mocktikv.NewMemDB("")
+	if err != nil {
+		panic("mvccStore---->" + err.Error())
+	}
+	store, err := mockstore.NewMockTikvStore(
+		mockstore.WithMVCCStore(mvccStore),
+	)
+	if err != nil {
+		panic("store---->" + err.Error())
+	}
+	_, err = session.BootstrapSession(store)
+	if err != nil {
+		panic("BootstrapSession---->" + err.Error())
+	}
+}
 func call(skip int) {
 	pc, file, line, _ := runtime.Caller(skip)
 	pcName := runtime.FuncForPC(pc).Name() //获取函数名
@@ -141,7 +163,7 @@ func print() {
 func testTable01() {
 	c := &check.C{}
 	s := SetUpSuite(c)
-	s.tk.MustExec("use test_db")
+	s.tk.MustExec("use test")
 	s.tk.MustExec("drop table if exists t")
 	s.tk.MustExec("create table t(c1 int, c2 int)")
 	err := s.s.NewTxn(context.Background())
@@ -177,25 +199,46 @@ func testTable01() {
 func testInsertSql2() {
 	//logutil.SetLevel("ERROR")
 	c := &check.C{}
+	//s:=SetUpSuite2(c)
+	//SetUpSuite2(c)
 	s := SetUpSuite2(c)
-	s.tk.MustExec("use test_db")
+	s.tk.MustExec("use test")
 	s.tk.MustExec("drop table if exists t")
-	s.tk.MustExec("create table t(c1 varchar(255) primary key, c2 varchar(255))")
+	s.tk.MustExec("create table t(c1 int primary key, c2 varchar(255))")
+	s.tk.MustExec("create index index_t on t(c2)")
 
-	s.tk.MustExec("insert into t values (?, ?)", "a", "1")
-	s.tk.MustExec("insert into t values (?, ?)", "b", "2")
-	s.tk.MustExec("insert into t values (?, ?)", "g", "3")
+	s.tk.MustExec("insert into t values (?, ?)", 101, "1")
+	s.tk.MustExec("insert into t values (?, ?)", 102, "2")
+	s.tk.MustExec("insert into t values (?, ?)", 103, "3")
+
+	//s.tk.MustExec("insert into t values (?, ?)", "b", "2")
+	//s.tk.MustExec("insert into t values (?, ?)", "g", "3")
 	//for i := 1; i <= 1; i++ {
 	//	s.tk.MustExec("insert into t values (?, ?)", "a", "1")
 	//}
 
 	//	r := s.tk.MustQuery(`select * from t where c1='a' or c1='g'`)
-	//r := s.tk.MustQuery(`select * from t where c1='a'`)
+	//	r := s.tk.MustQuery(`select * from t where c1='a'`)
 	r := s.tk.MustQuery(`select * from t`)
 	fmt.Println(r.Rows())
 }
+func test03() {
+	var x uint64
+	x = 100
+	head := make([]byte, 8)
 
+	binary.BigEndian.PutUint64(head, x)
+	str := string(head)
+	fmt.Println(str)
+	buf := []byte(str)
+	y := binary.BigEndian.Uint64(buf)
+	fmt.Println(y)
+}
 func main() {
+	//config.LoadSettings("/opt/test/config/test_case1.txt", nil)
+	//memkv.GetRemoteDBProxy()
+	//time.Sleep(10 * time.Second)
+	//fmt.Println("启动服务.....")
 	//formatter := &logrus.TextFormatter{}
 	//formatter.ForceColors=true
 	//formatter.TimestampFormat="2006-01-02 15:04:00"
@@ -207,7 +250,9 @@ func main() {
 	//logrus.SetLevel(logrus.ErrorLevel)
 	//testBoltDB()
 	logutil.SetLevel("error")
-	testInsertSql2()
+	//testInsertSql2()
+	SetUpSuite3()
+	//test03()
 	//fmt.Printf( " \x1b[%dm%s\x1b[0m=\n", 34, "aaa")
 	//logutil.BgLogger().Error("hello")
 	//print()

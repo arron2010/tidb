@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -1093,10 +1092,13 @@ func getBootstrapVersion(s Session) (int64, error) {
 
 // doDDLWorks executes DDL statements in bootstrap stage.
 func doDDLWorks(s Session) {
-	// Create a test database.
-	mustExecute(s, "CREATE DATABASE IF NOT EXISTS test")
+
 	// Create system db.
 	mustExecute(s, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;", mysql.SystemDB))
+
+	// Create a test database.
+	mustExecute(s, "CREATE DATABASE IF NOT EXISTS test")
+
 	// Create user table.
 	mustExecute(s, CreateUserTable)
 	// Create privilege tables.
@@ -1201,8 +1203,9 @@ func doDMLWorks(s Session) {
 
 func mustExecute(s Session, sql string) {
 	_, err := s.Execute(context.Background(), sql)
+	//xhelper.Print("####mustExecute-->",sql)
 	if err != nil {
-		debug.PrintStack()
+		//panic(err)
 		logutil.BgLogger().Fatal("mustExecute error", zap.Error(err))
 	}
 }

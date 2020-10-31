@@ -18,6 +18,7 @@ package kv
 import (
 	"bytes"
 	"context"
+	xhelper "github.com/pingcap/tidb/helper"
 	"sync/atomic"
 
 	"github.com/pingcap/errors"
@@ -96,7 +97,7 @@ func (m *memDbBuffer) Set(k Key, v []byte) error {
 	if len(k)+len(v) > m.entrySizeLimit {
 		return ErrEntryTooLarge.GenWithStackByArgs(m.entrySizeLimit, len(k)+len(v))
 	}
-
+	xhelper.PrintKey("memDbBuffer_Set", k)
 	m.sandbox.Put(k, v)
 	if m.Size() > int(m.bufferSizeLimit) {
 		return ErrTxnTooLarge.GenWithStackByArgs(atomic.LoadUint64(&TxnTotalSizeLimit))

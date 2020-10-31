@@ -16,8 +16,8 @@ package structure
 import (
 	"context"
 	"encoding/binary"
-
 	"github.com/pingcap/errors"
+	xhelper "github.com/pingcap/tidb/helper"
 	"github.com/pingcap/tidb/kv"
 )
 
@@ -140,9 +140,18 @@ func (t *TxStructure) LLen(key []byte) (int64, error) {
 // LGetAll gets all elements of this list in order from right to left.
 func (t *TxStructure) LGetAll(key []byte) ([][]byte, error) {
 	metaKey := t.encodeListMetaKey(key)
+	//if string(key) == "DDLJobAddIdxList"{
+	//	fmt.Println()
+	//}
 	meta, err := t.loadListMeta(metaKey)
-	if err != nil || meta.IsEmpty() {
-		return nil, errors.Trace(err)
+	if err != nil {
+		xhelper.Print("TxStructure 146-->LGetAll-->error-->", err, " -->", string(key), "-->", []byte(metaKey))
+
+		return nil, err
+	}
+	if meta.IsEmpty() {
+		//xhelper.Print("TxStructure 150-->LGetAll-->key-->",[]byte(metaKey))
+		return nil, nil
 	}
 
 	length := int(meta.RIndex - meta.LIndex)
@@ -214,6 +223,8 @@ func (t *TxStructure) LClear(key []byte) error {
 }
 
 func (t *TxStructure) loadListMeta(metaKey []byte) (listMeta, error) {
+	xhelper.PrintKey2("TxStructure_loadListMeta", metaKey)
+
 	v, err := t.reader.Get(context.TODO(), metaKey)
 	if kv.ErrNotExist.Equal(err) {
 		err = nil
